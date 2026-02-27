@@ -8,5 +8,7 @@ export interface Perceptor {
   position: Position;
   firstSeenDate: Date;
   lastSeenDate: Date;
+  guildName?: string;
+  guildBadge?: string;
   notes?: string;
 }

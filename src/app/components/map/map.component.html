@@ -1,23 +1,23 @@
 <div class="flex flex-col h-screen bg-gray-900 text-white">
   <!-- Header -->
   <header class="bg-gray-800 p-4 shadow-lg">
-    <div class="container mx-auto flex justify-between items-center">
+    <div class="container mx-auto flex justify-between items-center flex-wrap gap-2">
       <h1 class="text-2xl font-bold">Dofus Retro - Perceptor Tracker</h1>
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-wrap">
         <button 
           (click)="exportData()"
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition">
-          Export JSON
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition text-sm">
+          📥 Export JSON
         </button>
         <button 
           (click)="importData()"
-          class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition">
-          Import JSON
+          class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-sm">
+          📤 Import JSON
         </button>
         <button 
-          (click)="perceptorService.clearAll()"
-          class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition">
-          Clear All
+          (click)="perceptorService.clearAll(); drawMap()"
+          class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition text-sm">
+          🗑️ Clear All
         </button>
       </div>
     </div>
@@ -25,64 +25,193 @@
 
   <!-- Info Bar -->
   <div class="bg-gray-800 p-2 border-b border-gray-700">
-    <div class="container mx-auto text-sm">
-      <span class="mr-4">Total Perceptors: {{ perceptorService.perceptors().length }}</span>
-      @if (hoveredPosition()) {
-        <span class="mr-4">Position: [{{ hoveredPosition()!.x }}, {{ hoveredPosition()!.y }}]</span>
-      }
-      @if (selectedPosition()) {
-        <span class="text-yellow-400">Selected: [{{ selectedPosition()!.x }}, {{ selectedPosition()!.y }}]</span>
+    <div class="container mx-auto text-sm flex justify-between items-center flex-wrap gap-2">
+      <div class="flex gap-4 flex-wrap">
+        <span class="font-semibold">Total Perceptors: {{ perceptorService.perceptors().length }}</span>
+        @if (hoveredPosition()) {
+          <span>Position: [{{ hoveredPosition()!.x }}, {{ hoveredPosition()!.y }}]</span>
+        }
+        @if (selectedPosition()) {
+          <span class="text-yellow-400">Selected: [{{ selectedPosition()!.x }}, {{ selectedPosition()!.y }}]</span>
+          <button 
+            (click)="editSelectedPerceptor()"
+            class="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition">
+            ✏️ Éditer
+          </button>
+          <button 
+            (click)="deleteSelectedPerceptor()"
+            class="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs transition">
+            🗑️ Supprimer
+          </button>
+        }
+      </div>
+      <div class="flex gap-2 items-center">
+        <span class="text-xs text-gray-400">Zoom: {{ (zoom() * 100).toFixed(0) }}%</span>
         <button 
-          (click)="deleteSelectedPerceptor()"
-          class="ml-4 px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs transition">
-          Delete
+          (click)="zoomOut()"
+          class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+          title="Zoom Out (or use mouse wheel)">
+          🔍-
         </button>
-      }
+        <button 
+          (click)="zoomIn()"
+          class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+          title="Zoom In (or use mouse wheel)">
+          🔍+
+        </button>
+        <button 
+          (click)="resetView()"
+          class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs transition"
+          title="Reset View">
+          🎯 Reset
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- Map Container -->
-  <div class="flex-1 overflow-auto p-4">
-    <div class="inline-block min-w-full">
-      <div class="grid gap-px bg-gray-700 p-1 rounded" 
-           [style.grid-template-columns]="'repeat(' + getGridWidth() + ', minmax(0, 1fr))'">
-        @for (cell of gridCells(); track cell.x + '-' + cell.y) {
-          <div 
-            (click)="onCellClick(cell)"
-            (mouseenter)="onCellHover(cell)"
-            (mouseleave)="onCellLeave()"
-            [title]="'[' + cell.x + ', ' + cell.y + ']' + (hasPerceptor(cell) ? '\n' + getPerceptorInfo(cell) : '')"
-            class="aspect-square bg-gray-800 hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-center text-xs relative"
-            [class.bg-yellow-600]="hasPerceptor(cell)"
-            [class.hover:bg-yellow-500]="hasPerceptor(cell)"
-            [class.ring-2]="selectedPosition()?.x === cell.x && selectedPosition()?.y === cell.y"
-            [class.ring-blue-400]="selectedPosition()?.x === cell.x && selectedPosition()?.y === cell.y">
-            @if (hasPerceptor(cell)) {
-              <span class="text-lg">🏰</span>
-            }
-          </div>
-        }
-      </div>
-    </div>
+  <div class="flex-1 overflow-hidden relative bg-gray-900">
+    <canvas 
+      #mapCanvas
+      (click)="onCanvasClick($event)"
+      (contextmenu)="onCanvasRightClick($event)"
+      (mousedown)="onMouseDown($event)"
+      (mousemove)="onMouseMove($event)"
+      (mouseup)="onMouseUp()"
+      (mouseleave)="onMouseUp()"
+      (wheel)="onWheel($event)"
+      class="cursor-crosshair w-full h-full"
+      style="touch-action: none;">
+    </canvas>
   </div>
 
   <!-- Legend -->
-  <footer class="bg-gray-800 p-4 border-t border-gray-700">
+  <footer class="bg-gray-800 p-3 border-t border-gray-700">
     <div class="container mx-auto">
-      <h3 class="font-bold mb-2">Legend:</h3>
-      <div class="flex gap-4 text-sm">
+      <h3 class="font-bold mb-2 text-sm">Instructions:</h3>
+      <div class="flex gap-4 text-xs flex-wrap">
         <div class="flex items-center gap-2">
-          <div class="w-6 h-6 bg-gray-800 border border-gray-600 rounded"></div>
-          <span>Empty cell</span>
+          <span class="text-red-500">🏰</span>
+          <span>= Perceptor</span>
         </div>
-        <div class="flex items-center gap-2">
-          <div class="w-6 h-6 bg-yellow-600 rounded flex items-center justify-center">🏰</div>
-          <span>Perceptor</span>
+        <div class="text-gray-400">
+          • Clic gauche: ajouter/mettre à jour percepteur
         </div>
-        <div class="ml-4 text-gray-400">
-          Click on an empty cell to add a perceptor. Click on a perceptor to update its last seen date.
+        <div class="text-gray-400">
+          • Clic droit: éditer percepteur (guilde, blason, notes)
+        </div>
+        <div class="text-gray-400">
+          • Glisser: déplacer la carte
+        </div>
+        <div class="text-gray-400">
+          • Molette: zoom
         </div>
       </div>
     </div>
   </footer>
+
+  <!-- Edit Modal -->
+  @if (showEditModal()) {
+    <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+         (click)="closeModal()">
+      <div class="bg-gray-800 rounded-lg shadow-xl max-w-md w-full border border-gray-700"
+           (click)="$event.stopPropagation()">
+        <!-- Modal Header -->
+        <div class="flex justify-between items-center p-4 border-b border-gray-700">
+          <h2 class="text-xl font-bold flex items-center gap-2">
+            🏰 Modifier le Percepteur
+          </h2>
+          <button (click)="closeModal()" 
+                  class="text-gray-400 hover:text-white transition">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-4 space-y-4">
+          <!-- Position Info -->
+          @if (editingPerceptor()) {
+            <div class="bg-gray-700 p-3 rounded">
+              <p class="text-sm text-gray-300">
+                <strong>Position:</strong> [{{ editingPerceptor()!.position.x }}, {{ editingPerceptor()!.position.y }}]
+              </p>
+              <p class="text-xs text-gray-400 mt-1">
+                Première vue: {{ editingPerceptor()!.firstSeenDate | date:'short' }}
+              </p>
+              <p class="text-xs text-gray-400">
+                Dernière vue: {{ editingPerceptor()!.lastSeenDate | date:'short' }}
+              </p>
+            </div>
+          }
+
+          <!-- Guild Name -->
+          <div>
+            <label class="block text-sm font-medium mb-2">
+              🏛️ Nom de la Guilde
+            </label>
+            <input 
+              type="text"
+              [(ngModel)]="editForm().guildName"
+              (ngModelChange)="updateFormField('guildName', $event)"
+              placeholder="Ex: Les Chevaliers"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-white">
+          </div>
+
+          <!-- Guild Badge URL -->
+          <div>
+            <label class="block text-sm font-medium mb-2">
+              🛡️ URL du Blason
+            </label>
+            <input 
+              type="text"
+              [(ngModel)]="editForm().guildBadge"
+              (ngModelChange)="updateFormField('guildBadge', $event)"
+              placeholder="https://exemple.com/blason.png"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-white">
+            <p class="text-xs text-gray-400 mt-1">
+              Vous pouvez utiliser un lien vers une image (PNG, JPG, GIF)
+            </p>
+            @if (editForm().guildBadge) {
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-xs text-gray-400">Aperçu:</span>
+                <img [src]="editForm().guildBadge" 
+                     alt="Blason" 
+                     class="w-8 h-8 object-contain bg-gray-600 rounded"
+                     (error)="$event.target.src = ''">
+              </div>
+            }
+          </div>
+
+          <!-- Notes -->
+          <div>
+            <label class="block text-sm font-medium mb-2">
+              📝 Notes
+            </label>
+            <textarea 
+              [(ngModel)]="editForm().notes"
+              (ngModelChange)="updateFormField('notes', $event)"
+              placeholder="Informations supplémentaires..."
+              rows="3"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:border-blue-500 text-white resize-none"></textarea>
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex justify-end gap-2 p-4 border-t border-gray-700">
+          <button 
+            (click)="closeModal()"
+            class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded transition">
+            Annuler
+          </button>
+          <button 
+            (click)="savePerceptor()"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition">
+            💾 Sauvegarder
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>
