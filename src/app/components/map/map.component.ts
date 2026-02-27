@@ -66,7 +66,7 @@ export class MapComponent implements AfterViewInit {
     const container = this.mapCanvas.nativeElement.parentElement;
     if (container) {
       this.mapWidth.set(container.clientWidth);
-      this.mapHeight.set(container.clientHeight - 100); // Reserve space for controls
+      this.mapHeight.set(container.clientHeight);
       this.mapCanvas.nativeElement.width = this.mapWidth();
       this.mapCanvas.nativeElement.height = this.mapHeight();
     }
@@ -137,7 +137,7 @@ export class MapComponent implements AfterViewInit {
     const selected = this.selectedPosition();
 
     perceptors.forEach(perceptor => {
-      const pixel = this.gameToPixel(perceptor.position.x, perceptor.position.y);
+      const pixel = this.getCellCenter(perceptor.position.x, perceptor.position.y);
       const x = pixel.x + pan.x;
       const y = pixel.y + pan.y;
       const size = 15 * zoom;
@@ -232,6 +232,30 @@ export class MapComponent implements AfterViewInit {
     };
   }
 
+  getCellCenter(x: number, y: number): { x: number; y: number } {
+    const pixel = this.gameToPixel(x, y);
+    const cellSize = 20 * this.zoom();
+    return {
+      x: pixel.x + cellSize / 2,
+      y: pixel.y + cellSize / 2
+    };
+  }
+
+  getCanvasCoordinates(event: MouseEvent): { x: number; y: number } {
+    const canvas = this.mapCanvas.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate scale factor between display size and bitmap size
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    // Get coordinates relative to canvas and scale to bitmap coordinates
+    const x = (event.clientX - rect.left) * scaleX;
+    const y = (event.clientY - rect.top) * scaleY;
+    
+    return { x, y };
+  }
+
   pixelToGame(pixelX: number, pixelY: number): Position {
     const zoom = this.zoom();
     const pan = this.panOffset();
@@ -239,8 +263,9 @@ export class MapComponent implements AfterViewInit {
     const offsetX = Math.abs(this.mapData.minX) * cellSize;
     const offsetY = Math.abs(this.mapData.minY) * cellSize;
     
-    const x = Math.round((pixelX - pan.x - offsetX) / cellSize);
-    const y = Math.round((pixelY - pan.y - offsetY) / cellSize);
+    // Adjust for cell center - we want to find which cell center is closest
+    const x = Math.floor((pixelX - pan.x - offsetX + cellSize / 2) / cellSize);
+    const y = Math.floor((pixelY - pan.y - offsetY + cellSize / 2) / cellSize);
     
     return { x, y };
   }
@@ -248,10 +273,8 @@ export class MapComponent implements AfterViewInit {
   onCanvasClick(event: MouseEvent): void {
     if (this.isDragging) return;
     
-    const rect = this.mapCanvas.nativeElement.getBoundingClientRect();
-    const pixelX = event.clientX - rect.left;
-    const pixelY = event.clientY - rect.top;
-    const position = this.pixelToGame(pixelX, pixelY);
+    const coords = this.getCanvasCoordinates(event);
+    const position = this.pixelToGame(coords.x, coords.y);
     
     // Check if position is within bounds
     if (position.x < this.mapData.minX || position.x > this.mapData.maxX ||
@@ -259,17 +282,16 @@ export class MapComponent implements AfterViewInit {
       return;
     }
 
-    this.onCellClick(position);
+    // Just select the position on left click
+    this.selectedPosition.set(position);
   }
 
   onCanvasRightClick(event: MouseEvent): void {
     event.preventDefault(); // Prevent context menu
     if (this.isDragging) return;
     
-    const rect = this.mapCanvas.nativeElement.getBoundingClientRect();
-    const pixelX = event.clientX - rect.left;
-    const pixelY = event.clientY - rect.top;
-    const position = this.pixelToGame(pixelX, pixelY);
+    const coords = this.getCanvasCoordinates(event);
+    const position = this.pixelToGame(coords.x, coords.y);
     
     // Check if position is within bounds
     if (position.x < this.mapData.minX || position.x > this.mapData.maxX ||
@@ -281,9 +303,30 @@ export class MapComponent implements AfterViewInit {
   }
 
   onMouseDown(event: MouseEvent): void {
-    this.isDragging = true;
-    this.dragStart = { x: event.clientX, y: event.clientY };
-    this.lastPanOffset = { ...this.panOffset() };
+    // Middle click (button 1) adds/updates perceptor
+    if (event.button === 1) {
+      event.preventDefault(); // Prevent auto-scroll
+      const coords = this.getCanvasCoordinates(event);
+      const position = this.pixelToGame(coords.x, coords.y);
+      
+      console.log('Middle click - Pixel:', coords, 'Game:', position, 'Pan:', this.panOffset(), 'Zoom:', this.zoom());
+      
+      // Check if position is within bounds
+      if (position.x >= this.mapData.minX && position.x <= this.mapData.maxX &&
+          position.y >= this.mapData.minY && position.y <= this.mapData.maxY) {
+        this.onCellClick(position);
+      } else {
+        console.log('Position out of bounds');
+      }
+      return;
+    }
+    
+    // Left click (button 0) starts dragging
+    if (event.button === 0) {
+      this.isDragging = true;
+      this.dragStart = { x: event.clientX, y: event.clientY };
+      this.lastPanOffset = { ...this.panOffset() };
+    }
   }
 
   onMouseMove(event: MouseEvent): void {
@@ -297,10 +340,8 @@ export class MapComponent implements AfterViewInit {
       this.drawMap();
     } else {
       // Update hovered position
-      const rect = this.mapCanvas.nativeElement.getBoundingClientRect();
-      const pixelX = event.clientX - rect.left;
-      const pixelY = event.clientY - rect.top;
-      const position = this.pixelToGame(pixelX, pixelY);
+      const coords = this.getCanvasCoordinates(event);
+      const position = this.pixelToGame(coords.x, coords.y);
       
       if (position.x >= this.mapData.minX && position.x <= this.mapData.maxX &&
           position.y >= this.mapData.minY && position.y <= this.mapData.maxY) {
